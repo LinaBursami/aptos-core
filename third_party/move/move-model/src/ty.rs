@@ -1581,6 +1581,7 @@ impl TypeInstantiationDerivation {
 }
 
 /// Data providing context for displaying types.
+#[derive(Clone)]
 pub struct TypeDisplayContext<'a> {
     pub env: &'a GlobalEnv,
     pub type_param_names: Option<Vec<Symbol>>,

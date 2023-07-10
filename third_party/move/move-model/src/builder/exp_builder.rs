@@ -147,7 +147,7 @@ impl<'env, 'translator, 'module_translator> ExpTranslator<'env, 'translator, 'mo
 
     pub fn type_variance(&self) -> Variance {
         if self.mode == ExpTranslationMode::Impl {
-            // When translating Move implementation code, no variance is allowed
+            // When translating Move implementation code, use impl variance.
             Variance::ShallowImplVariance
         } else {
             // In specification mode all integers are automatically extended to `num`, and
