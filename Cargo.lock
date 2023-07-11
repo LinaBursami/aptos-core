@@ -9255,10 +9255,12 @@ dependencies = [
  "hyper",
  "image",
  "nft-metadata-crawler-utils",
+ "regex",
  "reqwest",
  "serde 1.0.166",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]

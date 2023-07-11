@@ -12,9 +12,11 @@ use image::{
     imageops::{resize, FilterType},
     DynamicImage, ImageBuffer, ImageFormat, ImageOutputFormat,
 };
+use regex::Regex;
 use reqwest::Client;
 
 use serde_json::Value;
+use url::Url;
 
 use crate::{
     db::upsert_uris,
@@ -117,13 +119,58 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_uri(uri: String) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let modified_uri = if uri.starts_with("ipfs://") {
+            uri.replace("ipfs://", "https://ipfs.com/ipfs/")
+        } else {
+            uri.to_string()
+        };
+
+        let url = Url::parse(&modified_uri)?;
+        let re = Regex::new(r"^(ipfs/)(?P<cid>[a-zA-Z0-9]+)(?P<path>/.*)?$")?;
+
+        let path = match url.path_segments() {
+            Some(segments) => Some(segments.collect::<Vec<_>>().join("/")),
+            None => None,
+        };
+
+        if let Some(captures) = re.captures(&path.unwrap_or_default()) {
+            let cid = captures["cid"].to_string();
+            let path = captures.name("path").map(|m| m.as_str().to_string());
+
+            Ok(format!(
+                "https://testlaunchmynft.mypinata.cloud/ipfs/{}{}",
+                cid,
+                path.unwrap_or_default()
+            ))
+        } else {
+            Err("Invalid IPFS URI".into())
+        }
+    }
+
+    async fn get_size(&mut self, url: String) -> Result<u32, Box<dyn Error + Send + Sync>> {
+        let client = Client::new();
+        let header_map = client.head(url).send().await?.headers().clone();
+        match header_map.get("content-length") {
+            Some(length) => Ok(length.to_str()?.parse::<u32>()?),
+            None => Err("No content-length header, skipping".into()),
+        }
+    }
+
     async fn parse_json(&mut self) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        let uri = match Self::parse_uri(self.entry.token_uri.clone()) {
+            Ok(u) => u,
+            Err(_) => self.entry.token_uri.clone(),
+        };
+
+        if self.get_size(uri.clone()).await? > 5000000 {
+            return Err("File too large, skipping".into());
+        }
+
         for _ in 0..3 {
-            self.log(&format!(
-                "Sending request for token_uri {}",
-                self.entry.token_uri
-            ));
-            let response = reqwest::get(&self.entry.token_uri).await?;
+            self.log(&format!("Sending request for token_uri {}", uri));
+
+            let response = reqwest::get(uri).await?;
             let parsed_json = response.json::<Value>().await?;
             if let Some(img) = parsed_json["image"].as_str() {
                 self.model.raw_image_uri = Some(img.to_string());
@@ -161,13 +208,22 @@ impl Parser {
     }
 
     async fn optimize_image(&mut self) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        for _ in 0..3 {
-            let img_uri = self
-                .model
-                .raw_image_uri
-                .clone()
-                .unwrap_or(self.model.token_uri.clone());
+        let uri = self
+            .model
+            .raw_image_uri
+            .clone()
+            .unwrap_or(self.model.token_uri.clone());
 
+        let img_uri = match Self::parse_uri(uri.clone()) {
+            Ok(u) => u,
+            Err(_) => uri,
+        };
+
+        if self.get_size(img_uri.clone()).await? > 5000000 {
+            return Err("File too large, skipping".into());
+        }
+
+        for _ in 0..3 {
             self.log(&format!(
                 "Sending request for raw_image_uri {}",
                 img_uri.clone()

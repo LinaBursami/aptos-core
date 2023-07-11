@@ -13,7 +13,9 @@ futures = { workspace = true }
 hyper = { workspace = true }
 image = { workspace = true }
 nft-metadata-crawler-utils = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+url = { workspace = true }
